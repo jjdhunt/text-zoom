@@ -29,7 +29,7 @@
   </p>
 
   <script>
-    const increase_sys_msg = `You will be provided with a piece of text. A portion of the text will be enclosed in '{}'. Your task is to rewrite the text within '{}' by adding more detail and expanding it to be about twice as long.
+    const increaseSysMsg = `You will be provided with a piece of text. A portion of the text will be enclosed in '{}'. Your task is to rewrite the text within '{}' by adding more detail and expanding it to be about twice as long.
 There is a challenge however: the expanded text must fit in exactly with the surrounding text. Even if a word is split by a bracket, the expanded text must match the part of the split word outside the brackets. This is EXTREMELY important.
 
 When replying:
@@ -41,9 +41,9 @@ Input:
 '{Shakespeare wro}te the play Hamlet.'
 
 Expected Output:
-'{William Shakespeare, an English playwright and poet born in 1564, wro}te the the play Hamlet.'`
+'{William Shakespeare, an English playwright and poet born in 1564, wro}te the the play Hamlet.'`;
 
-    const decrease_sys_msg = `You will be provided with a piece of text. A portion of the text will be enclosed in '{}'. Your task is to rewrite the text within '{}' by removing detail and summarizing it to be about half as long.
+    const decreaseSysMsg = `You will be provided with a piece of text. A portion of the text will be enclosed in '{}'. Your task is to rewrite the text within '{}' by removing detail and summarizing it to be about half as long.
 There is a challenge however: the expanded text must fit in exactly with the surrounding text. Even if a word is split by a bracket, the expanded text must match the part of the split word outside the brackets. This is EXTREMELY important.
 
 When replying:
@@ -56,100 +56,103 @@ Input:
 '{William Shakespeare, an English playwright and poet born in 1564, wro}te the the play Hamlet.'
 
 Expected Output:
-'{Shakespeare wro}te the play Hamlet.'`
+'{Shakespeare wro}te the play Hamlet.'`;
 
-    let openAiApiKey = null;
+let openAiApiKey = null;
 
-    function getApiKey() {
-        if (!openAiApiKey) {
-            openAiApiKey = prompt("Please enter your key:");
+function getApiKey() {
+  if (!openAiApiKey) {
+    openAiApiKey = prompt("Please enter an OpenAI API key (This will only be sent directly to OpenAI. It will not be stored):");
+  }
+  return openAiApiKey;
+}
+
+async function modifyText(text, paragraph, direction) {
+  const apiKey = getApiKey();
+  if (!apiKey) return text;
+
+  const sysMsg = direction === 'up' ? increaseSysMsg : decreaseSysMsg;
+  const prompt = paragraph.replace(text, `{${text}}`);
+
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: sysMsg },
+          { role: 'user', content: prompt }
+        ]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
         }
-        return openAiApiKey;
-    }
-
-    function getUserInput() {
-        let userInput = prompt("Please enter an OpenAI API key (This will only be sent directly to OpenAI. It will not be stored):");
-        return userInput;
-    }
-
-    async function modifyText(text, paragraph, direction) {
-        let apiKey = getApiKey()
-        if (!apiKey) return text;
-        const sys_msg = direction === 'up' ? increase_sys_msg : decrease_sys_msg;
-        let prompt = paragraph.replace(text, `{${text}}`);
-        try {
-            const response = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
-            {
-                model: 'gpt-4o',
-                messages: [{role: 'system', content: sys_msg},
-                        {role: 'user', content: prompt}]
-            },
-            {
-                headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-                }
-            }
-            );
-            reply_text = response.data.choices[0].message.content
-            let modification = reply_text.match(/\{([^}]+)\}/);
-            if (modification) {
-                // leading and trailing spaces are hard for gpt to get right. we'll make sure they're right manually
-                // First ensure that there are no leading or trailing spaces on the modified text, then add them if the original text had them.
-                modification = modification[1].trim();
-                modification = text.startsWith(' ') ? ' ' + modification : modification;
-                modification = text.endsWith(' ') ? modification + ' ' : modification;
-                return modification; // Output: delimited portion
-            } else {
-                return text;  // Fallback to original text if gpt didn't return the right thing.
-            }
-        } catch (error) {
-            console.error('OpenAI API Error:', error);
-            return text;  // Fallback to original text on error
-        }
-    }
-
-    // Get the paragraph containing the selected text
-    function getParagraphFromSelection(selection) {
-      let node = selection.anchorNode;
-      while (node && node.nodeName !== 'P') {
-        node = node.parentNode;
       }
-      return node ? node.innerText : '';
-    }
+    );
 
-    // Replace the selected text with modified content
-    async function replaceSelectedText(direction) {
-      let selection = window.getSelection();
-      if (!selection.isCollapsed) {
-        let selectedText = selection.toString();
-        let paragraph = getParagraphFromSelection(selection);
-        let modifiedText = await modifyText(selectedText, paragraph, direction);
+    // Extract the {} delimited text from the response.
+    // Because leading and trailing spaces in the delimited text are hard for gpt to get right, we'll make sure they're right manually.
+    // First ensure that there are no leading or trailing spaces on the modified text, then add them if the original text had them.
+    let modifiedText = response.data.choices[0].message.content.match(/\{([^}]+)\}/)?.[1].trim() || text;
+    if (text.startsWith(' ')) modifiedText = ' ' + modifiedText;
+    if (text.endsWith(' ')) modifiedText += ' ';
+    return modifiedText;
 
-        let range = selection.getRangeAt(0);
-        range.deleteContents();
-        range.insertNode(document.createTextNode(modifiedText));
-      }
-    }
+  } catch (error) {
+    console.error('OpenAI API Error:', error);
+    return text;
+  }
+}
 
-    // Listen for Ctrl + Scroll and Ctrl + '=' / '-'
-    document.addEventListener('wheel', async (event) => {
-      if (event.ctrlKey) {
-        let direction = event.deltaY > 0 ? 'down' : 'up';
-        await replaceSelectedText(direction);
-        event.preventDefault();  // Prevent scrolling
-      }
-    });
+// Get the paragraph containing the selection
+function getParagraphFromSelection(selection) {
+  let node = selection.anchorNode;
+  while (node && node.nodeName !== 'P') {
+    node = node.parentNode;
+  }
+  return node ? node.innerText : '';
+}
 
-    document.addEventListener('keydown', async (event) => {
-      if (event.ctrlKey && (event.key === '=' || event.key === '-')) {
-        let direction = event.key === '=' ? 'up' : 'down';
-        await replaceSelectedText(direction);
-        event.preventDefault();  // Prevent zooming
-      }
-    });
-  </script>
+// Replace the selected text with modified content
+async function replaceSelectedText(direction) {
+  const selection = window.getSelection();
+  if (!selection.isCollapsed) {
+    const selectedText = selection.toString();
+    const paragraph = getParagraphFromSelection(selection);
+    const modifiedText = await modifyText(selectedText, paragraph, direction);
 
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+    range.insertNode(document.createTextNode(modifiedText));
+  }
+}
+
+// Listen for Ctrl + Scroll and Ctrl + '=' / '-'
+let isReplacingText = false;  // Flag to track ongoing execution
+document.addEventListener('wheel', async (event) => {
+  if (event.ctrlKey && !isReplacingText) {
+    const direction = event.deltaY > 0 ? 'down' : 'up';
+    isReplacingText = true;
+    await replaceSelectedText(direction);
+
+    isReplacingText = false;
+    event.preventDefault();
+  }
+});
+
+document.addEventListener('keydown', async (event) => {
+  if (event.ctrlKey && (event.key === '=' || event.key === '-') && !isReplacingText) {
+    const direction = event.key === '=' ? 'up' : 'down';
+    isReplacingText = true;
+    await replaceSelectedText(direction);
+    
+    isReplacingText = false;
+    event.preventDefault();
+  }
+});
+</script>
 </body>
+
 </html>
