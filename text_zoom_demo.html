@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Zoom</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 40px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Text Zoom</h1>
+  <p>
+    Transcription factors (TFs) regulate gene expression, determining cell fates. We are seeking to predict de novo TF activity in any cell, to perform intentional state transitions (e.g., from diseased to healthy). Our research combines mammalian cell culture models, genetic and epigenetic editing, single cell genomics, large-scale CRISPR screens, and various computational approaches to achieve this goal.
+    TFs bind to specific DNA sequences, but only occupy a subset of potential sites in each cell type. We study the rules governing this cell type-specific binding and its effects.
+    We explore novel stable cell states that can be created with natural TFs. Mapping this opportunity landscape experimentally helps us train deep learning models to predict TF 'recipes' for intentional cell state transitions that do not occur in nature.
+    If we were able to predict cell state transitions in patients, this would unlock a new class of therapeutic strategies. To start bridging the gap between the dish and the clinic, we study transferability of our predictions from uni-cellular to multi-cellular systems, across environments and species.
+  </p>
+  <hr>
+  <p>
+    The rabbit-hole went straight on like a tunnel for some way, and then dipped suddenly down, so suddenly that Alice had not a moment to think about stopping herself before she found herself falling down what seemed to be a very deep well.
+    Either the well was very deep, or she fell very slowly, for she had plenty of time as she went down to look about her, and to wonder what was going to happen next. First, she tried to look down and make out what she was coming to, but it was too dark to see anything; then she looked at the sides of the well, and noticed that they were filled with cupboards and book-shelves: here and there she saw maps and pictures hung upon pegs. She took down a jar from one of the shelves as she passed; it was labelled "ORANGE MARMALADE," but to her great disappointment it was empty: she did not like to drop the jar for fear of killing somebody underneath, so managed to put it into one of the cupboards as she fell past it.
+  </p>
+
+  <script>
+    const increase_sys_msg = `You will be provided with a piece of text. A portion of the text will be enclosed in '{}'. Your task is to rewrite the text within '{}' by adding more detail and expanding it to be about twice as long.
+There is a challenge however: the expanded text must fit in exactly with the surrounding text. Even if a word is split by a bracket, the expanded text must match the part of the split word outside the brackets. This is EXTREMELY important.
+
+When replying:
+1. Write the entire text, with your expanded version of the text in '{}', including the '{}' symbols.
+2. Make sure the modified text fits smoothly and logically in the rest of text.
+
+Example:
+Input:
+'{Shakespeare wro}te the play Hamlet.'
+
+Expected Output:
+'{William Shakespeare, an English playwright and poet born in 1564, wro}te the the play Hamlet.'`
+
+    const decrease_sys_msg = `You will be provided with a piece of text. A portion of the text will be enclosed in '{}'. Your task is to rewrite the text within '{}' by removing detail and summarizing it to be about half as long.
+There is a challenge however: the expanded text must fit in exactly with the surrounding text. Even if a word is split by a bracket, the expanded text must match the part of the split word outside the brackets. This is EXTREMELY important.
+
+When replying:
+1. Write the entire text, with your shortened version of the text in '{}', including the '{}' symbols.
+2. Make sure the modified text fits smoothly and logically in the rest of text.
+3. If it's not possible to reduce the length, you can just return the original text.
+
+Example:
+Input:
+'{William Shakespeare, an English playwright and poet born in 1564, wro}te the the play Hamlet.'
+
+Expected Output:
+'{Shakespeare wro}te the play Hamlet.'`
+
+    let openAiApiKey = null;
+
+    function getApiKey() {
+        if (!openAiApiKey) {
+            openAiApiKey = prompt("Please enter your key:");
+        }
+        return openAiApiKey;
+    }
+
+    function getUserInput() {
+        let userInput = prompt("Please enter an OpenAI API key (This will only be sent directly to OpenAI. It will not be stored):");
+        return userInput;
+    }
+
+    async function modifyText(text, paragraph, direction) {
+        let apiKey = getApiKey()
+        if (!apiKey) return text;
+        const sys_msg = direction === 'up' ? increase_sys_msg : decrease_sys_msg;
+        let prompt = paragraph.replace(text, `{${text}}`);
+        try {
+            const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+                model: 'gpt-4o',
+                messages: [{role: 'system', content: sys_msg},
+                        {role: 'user', content: prompt}]
+            },
+            {
+                headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+                }
+            }
+            );
+            reply_text = response.data.choices[0].message.content
+            let modification = reply_text.match(/\{([^}]+)\}/);
+            if (modification) {
+                // leading and trailing spaces are hard for gpt to get right. we'll make sure they're right manually
+                // First ensure that there are no leading or trailing spaces on the modified text, then add them if the original text had them.
+                modification = modification[1].trim();
+                modification = text.startsWith(' ') ? ' ' + modification : modification;
+                modification = text.endsWith(' ') ? modification + ' ' : modification;
+                return modification; // Output: delimited portion
+            } else {
+                return text;  // Fallback to original text if gpt didn't return the right thing.
+            }
+        } catch (error) {
+            console.error('OpenAI API Error:', error);
+            return text;  // Fallback to original text on error
+        }
+    }
+
+    // Get the paragraph containing the selected text
+    function getParagraphFromSelection(selection) {
+      let node = selection.anchorNode;
+      while (node && node.nodeName !== 'P') {
+        node = node.parentNode;
+      }
+      return node ? node.innerText : '';
+    }
+
+    // Replace the selected text with modified content
+    async function replaceSelectedText(direction) {
+      let selection = window.getSelection();
+      if (!selection.isCollapsed) {
+        let selectedText = selection.toString();
+        let paragraph = getParagraphFromSelection(selection);
+        let modifiedText = await modifyText(selectedText, paragraph, direction);
+
+        let range = selection.getRangeAt(0);
+        range.deleteContents();
+        range.insertNode(document.createTextNode(modifiedText));
+      }
+    }
+
+    // Listen for Ctrl + Scroll and Ctrl + '=' / '-'
+    document.addEventListener('wheel', async (event) => {
+      if (event.ctrlKey) {
+        let direction = event.deltaY > 0 ? 'down' : 'up';
+        await replaceSelectedText(direction);
+        event.preventDefault();  // Prevent scrolling
+      }
+    });
+
+    document.addEventListener('keydown', async (event) => {
+      if (event.ctrlKey && (event.key === '=' || event.key === '-')) {
+        let direction = event.key === '=' ? 'up' : 'down';
+        await replaceSelectedText(direction);
+        event.preventDefault();  // Prevent zooming
+      }
+    });
+  </script>
+
+</body>
+</html>
