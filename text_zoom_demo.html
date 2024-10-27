@@ -133,8 +133,12 @@ async function replaceSelectedText(direction) {
   }
 }
 
-// Listen for Ctrl + Scroll and Ctrl + '=' / '-'
+// Zoom management 
 let isReplacingText = false;  // Flag to track ongoing execution
+let initialTouchSeparation = null;
+const TOUCH_DISTANCE_CHANGE_THRESHOLD = 20;  // Minimum distance change to trigger an action
+
+// Listen for Ctrl + Scroll and Ctrl + '=' / '-'
 document.addEventListener('wheel', async (event) => {
   if (event.ctrlKey && !isReplacingText) {
     const direction = event.deltaY > 0 ? 'down' : 'up';
@@ -156,6 +160,42 @@ document.addEventListener('keydown', async (event) => {
     event.preventDefault();
   }
 });
+
+// Mobile: Detect Pinch zoom with threshold
+document.addEventListener('touchstart', (event) => {
+  if (event.touches.length === 2) {
+    initialTouchSeparation = getTouchDistance(event.touches);  // Store initial touch distance
+  }
+});
+
+document.addEventListener('touchmove', async (event) => {
+  if (event.touches.length === 2 && initialTouchSeparation !== null && !isReplacingText) {
+    const currentDistance = getTouchDistance(event.touches);
+    const distanceChange = Math.abs(currentDistance - initialTouchSeparation);  // Calculate change in distance
+
+    if (distanceChange >= TOUCH_DISTANCE_CHANGE_THRESHOLD) {
+      const direction = currentDistance > initialTouchSeparation ? 'up' : 'down';  // Determine direction
+      isReplacingText = true;
+      await replaceSelectedText(direction);
+      isReplacingText = false;
+
+      initialTouchSeparation = currentDistance;  // Update distance for continuous gestures
+      event.preventDefault();  // Prevent zoom or scroll behavior
+    }
+  }
+});
+
+document.addEventListener('touchend', () => {
+  initialTouchSeparation = null;
+});
+
+function getTouchDistance(touches) {
+  const [touch1, touch2] = touches;
+  const dx = touch2.clientX - touch1.clientX;
+  const dy = touch2.clientY - touch1.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 </script>
 </body>
 
